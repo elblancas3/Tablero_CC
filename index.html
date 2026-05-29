@@ -383,7 +383,7 @@ tbody td{padding:8px 12px;color:var(--text);white-space:nowrap;font-family:'Barl
 </div><!-- /wrap -->
 
 <script>
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzFQnMLAcjEOtjirNycddjBzvkUEWx_SGazT--pHshQAYNYmzAXX6T1T5th1XN4LNlF8w/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz-2dn1Bv0tJ36B_OjJZ6uPzRbBacmZX2JHdsM0XlZ50ikCTTeYcBDegnRTXaktl4yLvg/exec';
 
 const CENTROS_DATA = [
   {no:1,nombre:"CC ALFONSO MARTÍNEZ DOMINGUEZ",municipio:"SABINAS HIDALGO",region:"NORTE",lat:26.510998,lng:-100.205693},
@@ -482,6 +482,34 @@ function initMapa() {
 
 // ── Cache de fotos para no repetir llamadas ──
 const fotosCache = {};
+
+// Extrae el folder ID de una URL de Drive
+function parseFolderId(url) {
+  if (!url) return null;
+  const m = url.match(/folders\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+// Llamada JSONP al Apps Script (evita CORS)
+function fetchFotos(folderId) {
+  return new Promise((resolve) => {
+    const cbName = '_cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve([]);
+    }, 8000);
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      document.body.removeChild(script);
+      resolve(data.ok ? (data.fotos || []) : []);
+    };
+    script.src = `${APPS_SCRIPT_URL}?action=fotos&folder_id=${folderId}&callback=${cbName}`;
+    document.body.appendChild(script);
+  });
+}
 
 // Extrae el folder ID de una URL de Drive
 function parseFolderId(url) {
@@ -596,10 +624,8 @@ function crearMarcador(cc, registro, dimmed) {
     }
 
     try {
-      const res  = await fetch(`${APPS_SCRIPT_URL}?action=fotos&folder_id=${folderId}`);
-      const data = await res.json();
-      fotosCache[folderId] = data.ok ? (data.fotos || []) : [];
-      // Re-buscar el elemento porque puede haber cambiado el DOM
+      const fotos = await fetchFotos(folderId);
+      fotosCache[folderId] = fotos;
       const el2 = document.getElementById('car-' + uid);
       if (el2) el2.outerHTML = buildCarousel(fotosCache[folderId], uid);
     } catch(err) {
