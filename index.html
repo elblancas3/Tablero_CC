@@ -576,7 +576,7 @@ function buildCarousel(fotos, uid) {
     return `<div class="popup-carousel"><div class="popup-foto-no"><span>📷</span><small>Sin fotos registradas</small></div></div>`;
   }
   const slides = fotos.map((u, i) =>
-    `<div class="carousel-slide"><img src="${u}" loading="lazy" onerror="this.style.display='none'" onclick="_lbFotos=${JSON.stringify(fotos)};lbAbrir(${i})"></div>`
+    `<div class="carousel-slide"><img src="${u}" loading="lazy" onerror="this.style.display='none'" onclick="lbAbrir(${i})"></div>`
   ).join('');
   const btns = fotos.length > 1
     ? `<button class="carousel-btn prev" onclick="carouselMove('${uid}',-1)">‹</button>
@@ -671,6 +671,7 @@ function crearMarcador(cc, registro, dimmed) {
 
     // Usar cache si ya se cargó
     if (fotosCache[folderId] !== undefined) {
+      _lbFotos = fotosCache[folderId];
       carEl.outerHTML = buildCarousel(fotosCache[folderId], uid);
       return;
     }
@@ -679,6 +680,7 @@ function crearMarcador(cc, registro, dimmed) {
       const fotos = await fetchFotos(folderId);
       fotosCache[folderId] = fotos;
       const el2 = document.getElementById('car-' + uid);
+      _lbFotos = fotos;
       if (el2) el2.outerHTML = buildCarousel(fotosCache[folderId], uid);
     } catch(err) {
       const el2 = document.getElementById('car-' + uid);
