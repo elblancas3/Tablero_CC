@@ -81,6 +81,25 @@ html,body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif
 .leaflet-popup-tip{background:#22223a;}
 .leaflet-popup-close-button{color:#9090b8 !important;}
 
+/* ── POPUP CARRUSEL ── */
+.popup-carousel{position:relative;margin:-12px -12px 10px -12px;border-radius:6px 6px 0 0;overflow:hidden;height:150px;background:#0d0d1a;}
+.carousel-track{display:flex;height:100%;transition:transform .3s ease;}
+.carousel-slide{min-width:100%;height:100%;flex-shrink:0;}
+.carousel-slide img{width:100%;height:100%;object-fit:cover;display:block;}
+.carousel-btn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.55);backdrop-filter:blur(3px);border:none;color:#fff;font-size:16px;width:28px;height:28px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;transition:background .2s;line-height:1;}
+.carousel-btn:hover{background:rgba(241,90,0,.8);}
+.carousel-btn.prev{left:6px;}
+.carousel-btn.next{right:6px;}
+.carousel-counter{position:absolute;bottom:6px;right:8px;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);border-radius:3px;padding:2px 7px;font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;color:#fff;letter-spacing:.04em;}
+.carousel-loading{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px;}
+.carousel-loading .spin{width:22px;height:22px;border:2px solid #2a2a45;border-top-color:#f15a00;border-radius:50%;animation:spin .7s linear infinite;}
+.carousel-loading small{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#35355a;}
+.popup-foto-no{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px;}
+.popup-foto-no span{font-size:28px;opacity:.3;}
+.popup-foto-no small{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#35355a;}
+.leaflet-popup-content-wrapper{padding:0 !important;}
+.leaflet-popup-content{margin:0 !important;padding:12px !important;min-width:260px !important;}
+
 /* ── LEGEND ── */
 .map-legend{display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--border);flex-wrap:wrap;}
 .leg-item{display:flex;align-items:center;gap:5px;font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:600;color:var(--muted);}
@@ -470,11 +489,72 @@ function initMapa() {
   });
 }
 
+// ── Cache de fotos ──
+const fotosCache = {};
+
+function parseFolderId(url) {
+  if (!url) return null;
+  const m = url.match(/folders\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+function fetchFotos(folderId) {
+  return new Promise((resolve) => {
+    const cbName = '_cb_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      if (document.body.contains(script)) document.body.removeChild(script);
+      resolve([]);
+    }, 8000);
+    window[cbName] = (data) => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      if (document.body.contains(script)) document.body.removeChild(script);
+      resolve(data.ok ? (data.fotos || []) : []);
+    };
+    script.src = `${APPS_SCRIPT_URL}?action=fotos&folder_id=${folderId}&callback=${cbName}`;
+    document.body.appendChild(script);
+  });
+}
+
+function buildCarousel(fotos, uid) {
+  if (!fotos || !fotos.length) {
+    return `<div class="popup-carousel"><div class="popup-foto-no"><span>📷</span><small>Sin fotos registradas</small></div></div>`;
+  }
+  const slides = fotos.map(u =>
+    `<div class="carousel-slide"><img src="${u}" loading="lazy" onerror="this.style.display='none'"></div>`
+  ).join('');
+  const btns = fotos.length > 1
+    ? `<button class="carousel-btn prev" onclick="carouselMove('${uid}',-1)">‹</button>
+       <button class="carousel-btn next" onclick="carouselMove('${uid}',1)">›</button>`
+    : '';
+  return `
+    <div class="popup-carousel" id="car-${uid}">
+      <div class="carousel-track" id="track-${uid}">${slides}</div>
+      ${btns}
+      ${fotos.length > 1 ? `<div class="carousel-counter" id="cnt-${uid}">1 / ${fotos.length}</div>` : ''}
+    </div>`;
+}
+
+window._carouselIdx = {};
+window.carouselMove = function(uid, dir) {
+  const track = document.getElementById('track-' + uid);
+  const cnt   = document.getElementById('cnt-'   + uid);
+  if (!track) return;
+  const total = track.children.length;
+  let idx = (window._carouselIdx[uid] || 0) + dir;
+  if (idx < 0) idx = total - 1;
+  if (idx >= total) idx = 0;
+  window._carouselIdx[uid] = idx;
+  track.style.transform = `translateX(-${idx * 100}%)`;
+  if (cnt) cnt.textContent = `${idx + 1} / ${total}`;
+};
+
 function crearMarcador(cc, registro, dimmed) {
-  const color = registro
+  const color   = registro
     ? (registro.prioridad==='P1'?'#ff4444':registro.prioridad==='P2'?'#ffb020':'#4cca80')
     : '#f15a00';
-  // Dimmed: marcadores de otras regiones se achican y desvanecen
   const opacity = dimmed ? 0.2 : 1;
   const size    = dimmed ? 7 : (registro ? (registro.prioridad==='P1' ? 16 : 12) : 9);
   const glow    = dimmed ? 'none' : `0 0 ${registro?'10':'6'}px ${color}99`;
@@ -491,22 +571,56 @@ function crearMarcador(cc, registro, dimmed) {
     ? `<span style="background:${color};color:#000;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:800">${registro.prioridad}</span>`
     : '<span style="color:#f15a00;font-size:10px">SIN DIAGNÓSTICO</span>';
 
+  const totalEquip = registro
+    ? (parseInt(registro.eq_en_aula)||0)+(parseInt(registro.eq_admin)||0)+(parseInt(registro.eq_extras)||0)
+    : 0;
+
+  const uid = cc.nombre.replace(/\W/g,'').substring(0,12);
+
   const popContent = `
-    <div style="font-family:'Barlow Condensed',sans-serif;min-width:200px">
-      <div style="font-size:14px;font-weight:800;margin-bottom:6px;line-height:1.2">${cc.nombre}</div>
-      <div style="font-size:11px;color:#999;margin-bottom:8px">${cc.municipio} · ${cc.region}</div>
+    <div style="font-family:'Barlow Condensed',sans-serif;min-width:260px">
+      <div class="popup-carousel" id="car-${uid}">
+        <div class="carousel-loading"><div class="spin"></div><small>Cargando fotos…</small></div>
+      </div>
+      <div style="font-size:14px;font-weight:800;margin-bottom:4px;line-height:1.2">${cc.nombre}</div>
+      <div style="font-size:11px;color:#9090b8;margin-bottom:8px">${cc.municipio} · ${cc.region}</div>
       ${pLabel}
       ${registro ? `
         <div style="margin-top:8px;display:grid;gap:3px;font-size:11px">
-          <div>💻 Equipos: ${registro.eq_funcionales||'—'}/${registro.eq_en_aula||'—'} · ${registro.eq_estado||'—'}</div>
+          <div>💻 Equipos: ${registro.eq_funcionales||'—'}/${totalEquip||'—'} · ${registro.eq_estado||'—'}</div>
           <div>📶 Internet: ${registro.internet_calidad||'—'}</div>
           <div>💧 Agua: ${registro.agua_potable||'—'} · 🚿 Baños: ${registro.banos||'—'}</div>
           <div style="color:#f15a00;font-size:10px;margin-top:4px">📅 ${registro.fecha_visita||'—'}</div>
         </div>
-      ` : '<div style="margin-top:8px;font-size:11px;color:#666">Pendiente de visita</div>'}
+      ` : '<div style="margin-top:8px;font-size:11px;color:#555">Pendiente de visita</div>'}
     </div>`;
 
-  m.bindPopup(popContent, { maxWidth: 280 });
+  m.bindPopup(popContent, { maxWidth: 300 });
+
+  m.on('popupopen', async () => {
+    const carEl = document.getElementById('car-' + uid);
+    if (!carEl) return;
+    const carpetaUrl = registro && registro.carpeta_url ? registro.carpeta_url.trim() : '';
+    const folderId   = parseFolderId(carpetaUrl);
+    if (!folderId) {
+      carEl.innerHTML = `<div class="popup-foto-no"><span>📷</span><small>Sin carpeta asignada</small></div>`;
+      return;
+    }
+    if (fotosCache[folderId] !== undefined) {
+      carEl.outerHTML = buildCarousel(fotosCache[folderId], uid);
+      return;
+    }
+    try {
+      const fotos = await fetchFotos(folderId);
+      fotosCache[folderId] = fotos;
+      const el2 = document.getElementById('car-' + uid);
+      if (el2) el2.outerHTML = buildCarousel(fotos, uid);
+    } catch(err) {
+      const el2 = document.getElementById('car-' + uid);
+      if (el2) el2.innerHTML = `<div class="popup-foto-no"><span>⚠️</span><small>Error al cargar fotos</small></div>`;
+    }
+  });
+
   return m;
 }
 
