@@ -77,9 +77,9 @@ html,body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif
 /* ── MAP ── */
 #map{height:420px;width:100%;background:#1a1a2e;}
 .leaflet-container{background:#1a1a2e !important;}
-.leaflet-popup-content-wrapper{background:#22223a;border:1px solid #35355a;color:#e8e8f0;box-shadow:0 4px 20px rgba(0,0,0,.6);}
+.leaflet-popup-content-wrapper{background:#22223a;border:1px solid #35355a;color:#e8e8f0;box-shadow:0 4px 20px rgba(0,0,0,.6);padding:0 !important;}
 .leaflet-popup-tip{background:#22223a;}
-.leaflet-popup-close-button{color:#9090b8 !important;}
+.leaflet-popup-content{margin:0 !important;padding:12px !important;min-width:260px !important;}
 
 /* ── POPUP CARRUSEL ── */
 .popup-carousel{position:relative;margin:-12px -12px 10px -12px;border-radius:6px 6px 0 0;overflow:hidden;height:150px;background:#0d0d1a;}
@@ -97,8 +97,6 @@ html,body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif
 .popup-foto-no{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:6px;}
 .popup-foto-no span{font-size:28px;opacity:.3;}
 .popup-foto-no small{font-family:'Barlow Condensed',sans-serif;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#35355a;}
-.leaflet-popup-content-wrapper{padding:0 !important;}
-.leaflet-popup-content{margin:0 !important;padding:12px !important;min-width:260px !important;}
 
 /* ── LEGEND ── */
 .map-legend{display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--border);flex-wrap:wrap;}
@@ -451,6 +449,7 @@ let todosRegistros = [];
 let filtros = { region:'', prioridad:'', municipio:'' };
 let mapa, marcadores = {};
 let chartDonut, chartEquipos, chartInet;
+let ccSeleccionado = '';
 
 // ══ DETECCIÓN WEB / MÓVIL ══
 const isMobile = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile/i.test(navigator.userAgent)
@@ -747,6 +746,7 @@ function registrosFiltrados() {
     if (filtros.region    && r.region    !== filtros.region)    return false;
     if (filtros.prioridad && r.prioridad !== filtros.prioridad) return false;
     if (filtros.municipio && r.municipio !== filtros.municipio) return false;
+    if (ccSeleccionado    && r.centro_nombre && !r.centro_nombre.includes(ccSeleccionado.substring(0,15))) return false;
     return true;
   });
 }
@@ -770,12 +770,13 @@ function renderKPIs(regs) {
   const p2 = regs.filter(r=>r.prioridad==='P2').length;
   const p3 = regs.filter(r=>r.prioridad==='P3').length;
 
-  // Equipos funcionales %
+  // Equipos funcionales % — funcionales vs total (aula + admin + extras)
   let equipPct = '—';
-  const conEquip = regs.filter(r => parseInt(r.eq_en_aula) > 0);
+  const conEquip = regs.filter(r => (parseInt(r.eq_en_aula)||0)+(parseInt(r.eq_admin)||0)+(parseInt(r.eq_extras)||0) > 0);
   if (conEquip.length) {
-    const pct = conEquip.reduce((s,r) => s + (parseInt(r.eq_funcionales)||0) / (parseInt(r.eq_en_aula)||1) * 100, 0) / conEquip.length;
-    equipPct = Math.round(pct) + '%';
+    const totalFunc  = conEquip.reduce((s,r) => s + (parseInt(r.eq_funcionales)||0), 0);
+    const totalEquip = conEquip.reduce((s,r) => s + (parseInt(r.eq_en_aula)||0) + (parseInt(r.eq_admin)||0) + (parseInt(r.eq_extras)||0), 0);
+    equipPct = totalEquip ? Math.round(totalFunc / totalEquip * 100) + '%' : '—';
   }
 
   // Internet OK
@@ -830,9 +831,11 @@ function renderChartEquipos(regs) {
   const regiones = ['METROPOLITANOS','PERIFERIA','NORTE','SUR','ORIENTE','CITRICOLA'];
   const labels   = ['AMM','Periferia','Norte','Sur','Oriente','Citrícola'];
   const vals = regiones.map(reg => {
-    const r = regs.filter(x => x.region===reg && parseInt(x.eq_en_aula)>0);
+    const r = regs.filter(x => x.region===reg && ((parseInt(x.eq_en_aula)||0)+(parseInt(x.eq_admin)||0)+(parseInt(x.eq_extras)||0))>0);
     if (!r.length) return 0;
-    return Math.round(r.reduce((s,x)=>(parseInt(x.eq_funcionales)||0)/(parseInt(x.eq_en_aula)||1)*100+s,0)/r.length);
+    const totalFunc  = r.reduce((s,x) => s + (parseInt(x.eq_funcionales)||0), 0);
+    const totalEquip = r.reduce((s,x) => s + (parseInt(x.eq_en_aula)||0) + (parseInt(x.eq_admin)||0) + (parseInt(x.eq_extras)||0), 0);
+    return totalEquip ? Math.round(totalFunc / totalEquip * 100) : 0;
   });
 
   if (chartEquipos) chartEquipos.destroy();
@@ -915,7 +918,7 @@ function renderTabla(regs) {
         <td>${r.municipio||'—'}</td>
         <td><span class="badge ${REGION_MAP[r.region]||''}">${r.region||'—'}</span></td>
         <td>${badge(r.prioridad)}</td>
-        <td style="font-weight:700;color:${parseInt(r.eq_funcionales)<parseInt(r.eq_en_aula)*0.5?'var(--red)':'var(--text)'}">${r.eq_funcionales||'—'}/${r.eq_en_aula||'—'}</td>
+        <td style="font-weight:700;color:${parseInt(r.eq_funcionales)<((parseInt(r.eq_en_aula)||0)+(parseInt(r.eq_admin)||0)+(parseInt(r.eq_extras)||0))*0.5?'var(--red)':'var(--text)'}">${r.eq_funcionales||'—'}/${(parseInt(r.eq_en_aula)||0)+(parseInt(r.eq_admin)||0)+(parseInt(r.eq_extras)||0)||'—'}</td>
         <td>${badge(r.eq_estado)}</td>
         <td>${badge(r.internet_calidad)}</td>
         <td>${badge(r.agua_potable)}</td>
@@ -926,7 +929,6 @@ function renderTabla(regs) {
 }
 
 // ══ FILTRO POR CENTRO COMUNITARIO ══
-let ccSeleccionado = '';
 
 function filtrarCC(query) {
   const drop = document.getElementById('dropCC');
@@ -1000,20 +1002,6 @@ function ocultarDropCC() {
   document.getElementById('dropCC').style.display = 'none';
 }
 
-// Override registrosFiltrados para incluir filtro CC
-const _rfBase = registrosFiltrados;
-registrosFiltrados = function() {
-  let regs = todosRegistros.filter(r => {
-    if (filtros.region    && r.region    !== filtros.region)    return false;
-    if (filtros.prioridad && r.prioridad !== filtros.prioridad) return false;
-    if (filtros.municipio && r.municipio !== filtros.municipio) return false;
-    return true;
-  });
-  if (ccSeleccionado) {
-    regs = regs.filter(r => r.centro_nombre && r.centro_nombre.includes(ccSeleccionado.substring(0,15)));
-  }
-  return regs;
-};
 </script>
 </body>
 </html>
